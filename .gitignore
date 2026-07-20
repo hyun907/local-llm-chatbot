@@ -1,0 +1,14 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.python-version
+
+# macOS
+.DS_Store
+
+# 로컬 도구 설정
+.claude/
+
+# 환경 변수
+.env
