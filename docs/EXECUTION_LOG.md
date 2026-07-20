@@ -51,3 +51,39 @@
 **완료 기준 충족**: 스트리밍/논스트리밍 모두 확인 ✅, `/v1/chat/completions`
 HTTP 200 + `choices[0].message.content` 비어있지 않음 + 네이티브 API와 동일
 모델·프롬프트 처리 ✅
+
+## STEP 4~5. Flask 백엔드 + 프론트엔드
+
+- `app.py` 작성: `/`(HTML 프론트), `/chat`, `/reset` 3개 엔드포인트.
+  대화 이력은 전역 리스트(v1 단일 사용자 전제), **Ollama 호출 성공 후에만**
+  user/assistant 메시지를 함께 이력에 확정하는 구조.
+- **포트 변경**: macOS의 AirPlay Receiver(ControlCenter)가 5000 포트를 점유하고
+  있어(`lsof -iTCP:5000` 확인) 기본 포트를 **5001**로 변경. PLAN의 curl 예시와
+  다른 부분.
+
+### curl 검증 결과 (PLAN 5절 기준 전부 수행)
+
+| # | 케이스 | 기대 | 결과 |
+|---|---|---|---|
+| 1 | `GET /` | HTML 200 | ✅ `text/html; charset=utf-8` |
+| 2 | 1턴: "제 이름은 승현입니다" | 200 + 응답 | ✅ history_length 2 |
+| 3 | 2턴: "제 이름이 뭐라고 했죠?" | 문맥 유지 | ✅ "승현" 응답, history_length 4 |
+| 4 | `POST /reset` | 이력 삭제 | ✅ history_length 0 |
+| 5 | reset 후 이름 질문 | 문맥 상실 | ✅ 이름 모름 (일반 자기소개 응답) |
+| 6 | 잘못된 JSON | 400 | ✅ `{"error": "...JSON이 아닙니다"}` |
+| 7 | 빈 메시지 (`""`, `"   "`) | 400 | ✅ |
+| 8 | 미설치 모델 요청 | 502 | ✅ `model 'no-such-model' not found` |
+| 9 | 타임아웃 (OLLAMA_TIMEOUT=0.3s 인스턴스) | 504 | ✅ |
+| 10 | Ollama 서버 중단 후 요청 | 503 | ✅ 안내 메시지 포함 |
+| 11 | **이력 무결성**: 6~10 실패 후 이력 길이 | 불변 | ✅ 실패 전 2 → 실패들 → 성공 후 4 (실패분 미반영) |
+| 12 | Ollama 재기동 후 복구 | 200 | ✅ `ollama ps`: llama3.2 100% GPU, 2.3GB 로드 |
+
+**완료 기준 충족**: `/chat` curl 테스트(Content-Type 포함) ✅, 실패 시 이력
+불변 ✅, 2턴 문맥 유지 ✅, `/reset` 후 문맥 삭제 ✅, 연결 실패 → 503 변환 ✅
+
+## STEP 6. 모델 교체 실험
+
+- 비교 대상: llama3.2(3B), phi3:mini(3.8B), mistral(7B) + 한국어 참고용 qwen2.5(7B)
+- `ollama pull phi3:mini`, `ollama pull mistral`, `ollama pull qwen2.5` 진행
+
+(진행 중 — 완료 후 결과 추가)
