@@ -8,15 +8,17 @@
     OLLAMA_TIMEOUT  (기본 120초)
     PORT            (기본 5001 — macOS AirPlay가 5000을 점유)
 
-대화 이력은 전역 리스트 하나로 관리한다(v1: 단일 사용자 로컬 전제).
+대화 이력은 브라우저 세션(쿠키의 세션 ID)별로 분리해 서버 메모리에 관리한다.
 Ollama 호출이 성공했을 때만 user/assistant 메시지를 함께 이력에 확정하므로,
 호출 실패 시 이력은 변하지 않는다.
 """
 
 import os
+import secrets
+import uuid
 
 import requests
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, session
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 # 모델 비교 실험(STEP 6) 결과 한국어 품질이 가장 좋았던 qwen2.5를 기본값으로 사용
@@ -35,9 +37,22 @@ SYSTEM_PROMPT = (
 TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.4"))
 
 app = Flask(__name__)
+# 세션 쿠키 서명용 키. 미지정 시 프로세스마다 새로 생성되므로
+# 재시작하면 기존 쿠키가 무효화된다(로컬 용도로는 충분).
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", secrets.token_hex(32))
 
-# v1: 단일 사용자 전제의 전역 대화 이력 (세션 분리는 v2 과제)
-chat_history: list[dict] = []
+# 세션 ID → 대화 이력. 쿠키에는 ID만 두고 이력 본문은 서버 메모리에 유지
+# (쿠키 4KB 제한 회피). 프로세스 재시작 시 소멸 — 영구 저장은 v2 로드맵의 DB 과제.
+histories: dict[str, list[dict]] = {}
+
+
+def session_history() -> list[dict]:
+    """현재 브라우저 세션의 대화 이력을 반환한다. 최초 방문이면 ID를 발급한다."""
+    sid = session.get("sid")
+    if sid is None:
+        sid = uuid.uuid4().hex
+        session["sid"] = sid
+    return histories.setdefault(sid, [])
 
 PAGE = """<!doctype html>
 <html lang="ko">
@@ -147,8 +162,9 @@ def chat():
     if not message:
         return jsonify(error="message 필드가 비어 있습니다."), 400
     model = data.get("model") or DEFAULT_MODEL
+    chat_history = session_history()
 
-    # 이력을 복사한 요청 페이로드를 만들고, 성공 이전에는 전역 이력을 건드리지 않는다
+    # 이력을 복사한 요청 페이로드를 만들고, 성공 이전에는 세션 이력을 건드리지 않는다
     messages = (
         [{"role": "system", "content": SYSTEM_PROMPT}]
         + chat_history
@@ -193,7 +209,7 @@ def chat():
 
 @app.post("/reset")
 def reset():
-    chat_history.clear()
+    session_history().clear()
     return jsonify(ok=True, history_length=0)
 
 
