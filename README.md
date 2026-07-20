@@ -101,4 +101,5 @@ OLLAMA_MODEL=llama3.2 python app.py
   (단, 이력은 메모리에만 있어 서버 재시작 시 소멸 — 영구 저장은 DB 과제)
 - ~~`stream: false` 고정~~ → **SSE 스트리밍 구현 완료** (첫 글자 표시 ~3초 → 0.25초)
 - ~~사실 오류(환각)~~ → **RAG 구현 완료** (단, 준비된 문서 범위 안에서만 유효)
-- 상세 로드맵은 [PLAN.md 7절](PLAN.md) 참고 (남은 항목: 모델 선택 UI, 배포)
+- 남은 작업의 우선순위·예상 규모는 [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md)에 정리
+  (1순위: 모델 선택 UI → README 스크린샷 → pytest 자동화)
