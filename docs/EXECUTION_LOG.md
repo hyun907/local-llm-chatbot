@@ -27,6 +27,27 @@
 ## STEP 1. 모델 다운로드
 
 - `ollama pull llama3.2` 실행 (기본 태그 = 3B, Q4_K_M 양자화)
-- 완료 기준: `ollama list`에 llama3.2 표시
+- `ollama list` 결과: `llama3.2:latest` / ID `a80c4f17acd5` / **2.0 GB** ✅
 
-(진행 중 — 완료 후 결과 추가)
+**완료 기준 충족**: `ollama list`에 llama3.2 표시 ✅
+
+## STEP 2~3. REST API + OpenAI 호환 API 테스트
+
+- 가상환경: `python3 -m venv venv` 후 `requirements.txt` 설치
+  - 설치된 버전: Flask 3.1.3, requests 2.34.2, openai 2.46.0
+- `test_ollama_api.py` 작성 후 실행 → **4/4 통과**
+
+| # | 테스트 | 결과 | 비고 |
+|---|---|---|---|
+| 1 | `/api/generate` 논스트리밍 | PASS | eval 40 tokens, **51.3 tok/s** |
+| 2 | `/api/generate` 스트리밍 | PASS | NDJSON 49청크 수신 후 조립 |
+| 3 | `/api/chat` 논스트리밍 | PASS | `message.content` 비어있지 않음 |
+| 4 | `/v1/chat/completions` (OpenAI SDK) | PASS | `api_key="ollama"` 더미 값으로 동작, `finish_reason=stop` |
+
+**관찰**: llama3.2(3B)의 한국어 응답에 베트남어("Tôi là...")·중국어("我的")가
+섞여 나오는 코드 스위칭 문제 확인. STEP 6 모델 비교에서 한국어 정확성 항목으로
+정량 비교 예정. → [LEARNING_LOG.md](LEARNING_LOG.md#step-2-3) 참고
+
+**완료 기준 충족**: 스트리밍/논스트리밍 모두 확인 ✅, `/v1/chat/completions`
+HTTP 200 + `choices[0].message.content` 비어있지 않음 + 네이티브 API와 동일
+모델·프롬프트 처리 ✅
