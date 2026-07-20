@@ -19,8 +19,16 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
+# 모델 비교 실험(STEP 6) 결과 한국어 품질이 가장 좋았던 qwen2.5를 기본값으로 사용
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
 TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "120"))
+
+# 소형 모델의 외국어 혼입·어색한 어미를 줄이기 위한 시스템 프롬프트.
+# 이력에는 저장하지 않고 매 요청 맨 앞에 붙인다.
+SYSTEM_PROMPT = (
+    "당신은 친절한 한국어 챗봇입니다. 항상 자연스럽고 문법에 맞는 한국어로만 "
+    "답하세요. 영어 단어, 한자, 다른 언어를 섞지 마세요. 답은 간결하게 하세요."
+)
 
 app = Flask(__name__)
 
@@ -137,7 +145,11 @@ def chat():
     model = data.get("model") or DEFAULT_MODEL
 
     # 이력을 복사한 요청 페이로드를 만들고, 성공 이전에는 전역 이력을 건드리지 않는다
-    messages = chat_history + [{"role": "user", "content": message}]
+    messages = (
+        [{"role": "system", "content": SYSTEM_PROMPT}]
+        + chat_history
+        + [{"role": "user", "content": message}]
+    )
     try:
         r = requests.post(
             f"{OLLAMA_HOST}/api/chat",
