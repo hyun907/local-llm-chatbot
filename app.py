@@ -22,8 +22,8 @@ import requests
 from flask import Flask, Response, jsonify, render_template_string, request, session
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-# 모델 비교 실험(STEP 6) 결과 한국어 품질이 가장 좋았던 qwen2.5를 기본값으로 사용
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5")
+# 2차 모델 비교(사후 개선 5) 결과 한국어 품질 1위였던 exaone3.5(한국어 특화)를 기본값으로 사용
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "exaone3.5")
 TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "120"))
 
 # 소형 모델의 외국어 혼입·어색한 어미를 줄이기 위한 시스템 프롬프트.

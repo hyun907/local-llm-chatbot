@@ -7,14 +7,16 @@ PLAN.md 2절 "비교 재현성" 기준을 따른다:
   - `ollama list`의 태그·ID·크기 함께 기록
 
 실행:
-    python benchmark_models.py
+    python benchmark_models.py                  # 기본 모델 목록 전체
+    python benchmark_models.py exaone3.5 ...    # 지정 모델만 측정, 기존 결과에 병합
 출력:
-    docs/benchmark_raw.json      # 원시 측정값
+    docs/benchmark_raw.json      # 원시 측정값 (재실행 시 모델 단위로 병합)
     docs/benchmark_results.md    # 마크다운 표 (README에 인용)
 """
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import requests
@@ -47,16 +49,17 @@ def unload(model: str) -> None:
 
 
 def run_once(model: str) -> dict:
-    r = requests.post(
-        f"{OLLAMA_HOST}/api/chat",
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": PROMPT}],
-            "stream": False,
-            "options": OPTIONS,
-        },
-        timeout=600,
-    )
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": PROMPT}],
+        "stream": False,
+        "options": OPTIONS,
+    }
+    if model.startswith("qwen3"):
+        # qwen3는 기본으로 사고 과정을 생성한다. 챗봇 응답 비교의 공정성을 위해
+        # (사고 토큰이 eval_count·지연에 섞이지 않도록) 끈다.
+        payload["think"] = False
+    r = requests.post(f"{OLLAMA_HOST}/api/chat", json=payload, timeout=600)
     r.raise_for_status()
     body = r.json()
     return {
@@ -71,8 +74,11 @@ def run_once(model: str) -> dict:
 
 def main() -> None:
     info = model_info()
-    results = {}
-    for model in MODELS:
+    models = sys.argv[1:] or MODELS
+    raw_path = DOCS / "benchmark_raw.json"
+    # 지정 모델만 다시 잴 때는 기존 결과를 유지한 채 해당 모델만 갱신
+    results = json.loads(raw_path.read_text()) if raw_path.exists() else {}
+    for model in models:
         tag = model if model in info else f"{model}:latest"
         print(f"\n=== {model} ({info.get(tag, {}).get('size', '?')}) ===")
         unload(model)
