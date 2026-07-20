@@ -13,8 +13,9 @@
 brew install ollama
 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve   # 별도 터미널
 
-# 2. 모델 다운로드 (기본 모델: 한국어 품질이 가장 좋았던 qwen2.5)
-ollama pull qwen2.5
+# 2. 모델 다운로드 (기본 모델: 한국어 특화 exaone3.5, RAG 임베딩: bge-m3)
+ollama pull exaone3.5
+ollama pull bge-m3
 
 # 3. Python 환경
 python3 -m venv venv && source venv/bin/activate
@@ -37,6 +38,8 @@ python app.py
 | `app.py` | Flask 백엔드 + HTML 프론트엔드 (단일 파일) |
 | `test_ollama_api.py` | Ollama REST/OpenAI 호환 API 점검 스크립트 |
 | `benchmark_models.py` | 모델 비교 벤치마크 (cold/warm, tok/s) |
+| `rag.py` | RAG 검색 모듈 (bge-m3 임베딩 + 코사인 유사도) |
+| `data/` | RAG 지식 문서 (서울 명소) — txt를 추가하면 자동 인덱싱 |
 | `docs/` | 실행·학습 기록, 벤치마크 결과 |
 
 ### API 엔드포인트
@@ -50,6 +53,18 @@ python app.py
 대화 이력은 Ollama 호출이 성공한 경우에만 확정되므로, 서버 장애·타임아웃이
 발생해도 이전 문맥이 오염되지 않는다. 이력은 **브라우저 세션별로 분리**된다
 (세션 ID 쿠키 + 서버 메모리, v2 로드맵 1번 구현 완료).
+
+### RAG (검색 증강 생성)
+
+`data/*.txt`의 문서를 bge-m3로 임베딩해두고, 질문과 유사도 0.5 이상인 상위
+청크를 시스템 프롬프트에 근거로 주입한다. 근거가 쓰인 답변에는 UI에
+"📄 참고 자료" 표시가 붙는다. 적용 전후 비교:
+
+| 질문 | RAG 없음 (환각) | RAG 적용 |
+|---|---|---|
+| 경복궁은 어느 구에? | "용산구" ✕ | **"종로구, 1395년 창건"** ✓ |
+| 서울 최고층 건물은? | (모델 지식에 의존) | **"롯데월드타워, 약 555m"** ✓ |
+| 파이썬이 뭐야? | - | 자료 무관 → RAG 미개입, 일반 답변 |
 
 ## 모델 비교 실험 (STEP 6)
 
@@ -85,4 +100,5 @@ OLLAMA_MODEL=llama3.2 python app.py
 - ~~대화 이력이 전역 변수 → 다중 사용자 시 섞임~~ → **세션 분리 구현 완료**
   (단, 이력은 메모리에만 있어 서버 재시작 시 소멸 — 영구 저장은 DB 과제)
 - ~~`stream: false` 고정~~ → **SSE 스트리밍 구현 완료** (첫 글자 표시 ~3초 → 0.25초)
-- 상세 로드맵은 [PLAN.md 7절](PLAN.md) 참고 (남은 항목: 모델 선택 UI, RAG, 배포)
+- ~~사실 오류(환각)~~ → **RAG 구현 완료** (단, 준비된 문서 범위 안에서만 유효)
+- 상세 로드맵은 [PLAN.md 7절](PLAN.md) 참고 (남은 항목: 모델 선택 UI, 배포)

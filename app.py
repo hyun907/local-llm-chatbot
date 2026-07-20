@@ -21,6 +21,8 @@ import uuid
 import requests
 from flask import Flask, Response, jsonify, render_template_string, request, session
 
+import rag
+
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 # 2차 모델 비교(사후 개선 5) 결과 한국어 품질 1위였던 exaone3.5(한국어 특화)를 기본값으로 사용
 DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "exaone3.5")
@@ -36,6 +38,14 @@ SYSTEM_PROMPT = (
 # Ollama 기본값(0.8)에서는 저확률 코드 토큰(":numel" 등)이 간헐적으로 누출됨.
 # 0.4로 낮춰 누출을 억제하되 답변 다양성은 유지한다.
 TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.4"))
+
+# RAG 인덱스: data/*.txt를 임베딩해 둔다. 실패해도 챗봇은 RAG 없이 동작.
+try:
+    rag_index = rag.RagIndex.build()
+    print(f"[RAG] 청크 {len(rag_index.chunks)}개 인덱싱 완료 (모델: {rag.EMBED_MODEL})")
+except Exception as e:  # noqa: BLE001 - 기동 실패 사유가 무엇이든 챗봇은 살린다
+    rag_index = None
+    print(f"[RAG] 비활성화: {e}")
 
 app = Flask(__name__)
 # 세션 쿠키 서명용 키. 미지정 시 프로세스마다 새로 생성되므로
@@ -79,6 +89,7 @@ PAGE = r"""<!doctype html>
   .user { background: #2563eb; color: #fff; margin-left: auto; width: fit-content; }
   .assistant { background: #8882; width: fit-content; }
   .error { color: #dc2626; font-size: .85rem; }
+  .sources { font-size: .72rem; opacity: .55; margin: -.3rem 0 .5rem .2rem; }
   form { display: flex; gap: .5rem; margin-top: .8rem; }
   input[type=text] { flex: 1; padding: .6rem; border: 1px solid #8886;
                      border-radius: 8px; font-size: 1rem; }
@@ -151,6 +162,12 @@ form.addEventListener("submit", async (e) => {
           if (!started) { pending.textContent = ""; started = true; }
           pending.textContent += evt.delta;
           log.scrollTop = log.scrollHeight;
+        } else if (evt.done && evt.sources && evt.sources.length) {
+          const src = document.createElement("div");
+          src.className = "sources";
+          src.textContent = "📄 참고 자료: " + evt.sources.join(", ");
+          log.appendChild(src);
+          log.scrollTop = log.scrollHeight;
         } else if (evt.error) {
           pending.className = "msg error";
           pending.textContent = evt.error;
@@ -194,9 +211,28 @@ def chat():
     # 이력 리스트의 참조를 미리 잡아 넘긴다.
     chat_history = session_history()
 
+    # RAG: 질문과 유사한 문서 청크가 있으면 시스템 프롬프트에 근거로 주입
+    system_prompt = SYSTEM_PROMPT
+    sources = []
+    if rag_index is not None:
+        try:
+            hits = rag_index.search(message)
+        except requests.exceptions.RequestException:
+            hits = []  # 임베딩 실패 시 RAG 없이 진행
+        if hits:
+            context = "\n\n".join(chunk for _, chunk in hits)
+            sources = [
+                chunk.split("]")[0].lstrip("[") for _, chunk in hits if chunk.startswith("[")
+            ]
+            system_prompt += (
+                "\n\n아래 참고 자료가 질문과 관련될 수 있습니다. 관련된 내용은 "
+                "반드시 자료에 근거해 정확하게 답하고, 자료와 무관한 질문이면 "
+                "자료를 무시하세요.\n\n" + context
+            )
+
     # 이력을 복사한 요청 페이로드를 만들고, 완주 이전에는 세션 이력을 건드리지 않는다
     messages = (
-        [{"role": "system", "content": SYSTEM_PROMPT}]
+        [{"role": "system", "content": system_prompt}]
         + chat_history
         + [{"role": "user", "content": message}]
     )
@@ -260,7 +296,14 @@ def chat():
         # 스트림이 done까지 완주한 경우에만 user/assistant 메시지를 함께 이력에 반영
         chat_history.append({"role": "user", "content": message})
         chat_history.append({"role": "assistant", "content": reply})
-        yield sse({"done": True, "model": model, "history_length": len(chat_history)})
+        yield sse(
+            {
+                "done": True,
+                "model": model,
+                "history_length": len(chat_history),
+                "sources": sources,
+            }
+        )
 
     return Response(
         stream(),

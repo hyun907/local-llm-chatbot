@@ -16,7 +16,9 @@ from pathlib import Path
 import requests
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+# bge-m3: 다국어(한국어 포함) 검색 성능이 nomic-embed-text보다 우수했고,
+# 무관한 질의를 임계값 아래로 잘 걸러냄 (EXECUTION_LOG 사후 개선 6 참고)
+EMBED_MODEL = os.environ.get("OLLAMA_EMBED_MODEL", "bge-m3")
 DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -52,13 +54,17 @@ class RagIndex:
                     chunks.append(block)
         if not chunks:
             raise ValueError(f"{data_dir}에 문서(.txt)가 없습니다.")
-        return cls(chunks, _embed(chunks))
+        # nomic-embed-text는 용도 접두사(search_document/search_query)를 붙여야
+        # 검색 성능이 제대로 나온다 (모델 카드 요구사항). bge-m3 등은 불필요.
+        prefix = "search_document: " if "nomic" in EMBED_MODEL else ""
+        return cls(chunks, _embed([prefix + c for c in chunks]))
 
     def search(
         self, query: str, k: int = 3, min_score: float = 0.5
     ) -> list[tuple[float, str]]:
         """유사도 상위 k개 청크를 (점수, 본문) 목록으로 반환. min_score 미만은 제외."""
-        qv = _embed([query])[0]
+        prefix = "search_query: " if "nomic" in EMBED_MODEL else ""
+        qv = _embed([prefix + query])[0]
         scored = sorted(
             ((_cosine(qv, v), c) for v, c in zip(self.vectors, self.chunks)),
             reverse=True,
