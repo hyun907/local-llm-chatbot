@@ -55,7 +55,9 @@ def session_history() -> list[dict]:
         session["sid"] = sid
     return histories.setdefault(sid, [])
 
-PAGE = """<!doctype html>
+# raw 문자열이어야 함: JS의 "\n\n"(SSE 이벤트 구분자)을 파이썬이
+# 실제 줄바꿈으로 바꿔버리면 JS 문법 오류로 프론트 전체가 죽는다.
+PAGE = r"""<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
