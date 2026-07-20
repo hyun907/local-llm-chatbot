@@ -30,6 +30,10 @@ SYSTEM_PROMPT = (
     "답하세요. 영어 단어, 한자, 다른 언어를 섞지 마세요. 답은 간결하게 하세요."
 )
 
+# Ollama 기본값(0.8)에서는 저확률 코드 토큰(":numel" 등)이 간헐적으로 누출됨.
+# 0.4로 낮춰 누출을 억제하되 답변 다양성은 유지한다.
+TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.4"))
+
 app = Flask(__name__)
 
 # v1: 단일 사용자 전제의 전역 대화 이력 (세션 분리는 v2 과제)
@@ -153,7 +157,12 @@ def chat():
     try:
         r = requests.post(
             f"{OLLAMA_HOST}/api/chat",
-            json={"model": model, "messages": messages, "stream": False},
+            json={
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": TEMPERATURE},
+            },
             timeout=TIMEOUT,
         )
     except requests.exceptions.ConnectTimeout:
